@@ -1,0 +1,6 @@
+sqlalchemy>=2.0
+pymysql>=1.1
+python-dotenv>=1.0
+requests>=2.31
+pandas>=2.0
+matplotlib>=3.8
