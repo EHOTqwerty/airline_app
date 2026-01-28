@@ -15,6 +15,7 @@ Po pobraniu:
 python -m venv .venv
 pip install -r requirements.txt
 wstawic do phpmyadmin -> sql polecenia app/sql/001_create_db.sql oraz app/sql/002_schema.sql
+zmienic .env.example na .env i wstawic prawidlowe klucze
 
 Przed rozpoczeciem pracy:
 .venv/Scripts/Activate.ps1
