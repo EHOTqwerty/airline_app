@@ -11,6 +11,11 @@ git clone https://github.com/EHOTqwerty/airline_app.git
 cd airline_app
 code .
 
+Pobranie z nadpisaniem:
+git fetch origin
+git reset --hard origin/main
+git clean -fd
+
 Po pobraniu:
 python -m venv .venv
 pip install -r requirements.txt
@@ -33,3 +38,4 @@ git push origin main
 
 Dodatkowe:
 git status
+
