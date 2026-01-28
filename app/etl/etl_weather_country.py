@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from sqlalchemy import text
 from app.db.connection import get_engine
-from app.api.open_meteo_client import fetch_hourly
+from app.api.open_meteo_client import fetch_hourly, generate_synthetic_hourly_weather
 
 def split_days(start_date: str, end_date: str):
     d1 = datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -18,39 +18,66 @@ def split_days(start_date: str, end_date: str):
     forecast = [d for d in days if d > hist_cutoff]
     return historical, forecast
 
-def run(country_code: str, start_date: str, end_date: str) -> str:
+
+def save_weather_hourly(conn, iata_code: str, rows, source: str):
+    conn.execute(
+        text("""
+            INSERT INTO weather_hourly
+              (iata_code, dt_utc, temperature_c, windspeed_ms, precipitation_mm, visibility_m, source)
+            VALUES
+              (:iata, :dt, :t, :w, :p, :v, :src)
+            ON DUPLICATE KEY UPDATE
+              temperature_c=VALUES(temperature_c),
+              windspeed_ms=VALUES(windspeed_ms),
+              precipitation_mm=VALUES(precipitation_mm),
+              visibility_m=VALUES(visibility_m),
+              source=VALUES(source)
+        """),
+        [
+            {
+                "iata": iata_code,
+                "dt": r.dt_utc,
+                "t": r.temperature_c,
+                "w": r.windspeed_ms,
+                "p": r.precipitation_mm,
+                "v": r.visibility_m,
+                "src": source,
+            }
+            for r in rows
+        ],
+    )
+
+def etl_weather_for_airport(iata: str, lat: float, lon: float, start: date, end: date) -> str:
     engine = get_engine()
-
-    # airports with coords
-    with engine.connect() as conn:
-        airports = conn.execute(text("""
-            SELECT iata_code, latitude, longitude
-            FROM airports
-            WHERE country_code=:cc AND is_active=1
-              AND latitude IS NOT NULL AND longitude IS NOT NULL
-        """), {"cc": country_code}).fetchall()
-
-    if not airports:
-        return f"EMPTY: no airports with coords for {country_code}"
-
-    hist_days, fc_days = split_days(start_date, end_date)
-
-    inserted = 0
     with engine.begin() as conn:
-        for (iata, lat, lon) in airports:
-            if hist_days:
-                hs = hist_days[0].strftime("%Y-%m-%d")
-                he = hist_days[-1].strftime("%Y-%m-%d")
-                data = fetch_hourly(lat, lon, hs, he, mode="historical")
-                inserted += _save_hourly(conn, iata, data, source="historical")
+        try:
+            api_rows = fetch_hourly(lat, lon, start.isoformat(), end.isoformat(), mode="historical")
+            if not api_rows or not api_rows.get("hourly") or len(api_rows["hourly"].get("time", [])) < 1:
+                raise ValueError("Open-Meteo returned empty hourly data")
 
-            if fc_days:
-                fs = fc_days[0].strftime("%Y-%m-%d")
-                fe = fc_days[-1].strftime("%Y-%m-%d")
-                data = fetch_hourly(lat, lon, fs, fe, mode="forecast")
-                inserted += _save_hourly(conn, iata, data, source="forecast")
+            # Konwersja do HourlyWeatherRow
+            rows = []
+            h = api_rows["hourly"]
+            for i, t in enumerate(h["time"]):
+                rows.append(
+                    type('Row', (), dict(
+                        dt_utc=datetime.strptime(t, "%Y-%m-%dT%H:%M"),
+                        temperature_c=h["temperature_2m"][i] if i < len(h["temperature_2m"]) else None,
+                        windspeed_ms=h["wind_speed_10m"][i] if i < len(h["wind_speed_10m"]) else None,
+                        precipitation_mm=h["precipitation"][i] if i < len(h["precipitation"]) else None,
+                        visibility_m=h["visibility"][i] if i < len(h["visibility"]) else None,
+                    ))()
+                )
+            save_weather_hourly(conn, iata, rows, source="api")
+            return f"OK: Open-Meteo saved {len(rows)} hourly rows for {iata}"
 
-    return f"OK: saved {inserted} hourly weather rows for {country_code} ({start_date}..{end_date})"
+        except Exception as e:
+            msg = f"FALLBACK weather for {iata}: {type(e).__name__}: {e}"
+            print(msg)
+
+            synth_rows = generate_synthetic_hourly_weather(iata, start, end)
+            save_weather_hourly(conn, iata, synth_rows, source="synthetic")
+            return f"{msg}\nOK: saved synthetic {len(synth_rows)} hourly rows for {iata}"
 
 def _save_hourly(conn, iata: str, data: dict, source: str) -> int:
     h = data.get("hourly", {})

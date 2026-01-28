@@ -119,3 +119,21 @@ CREATE TABLE IF NOT EXISTS amadeus_flight_offers (
 );
 
 CREATE INDEX idx_offers_req ON amadeus_flight_offers(request_id);
+
+ALTER TABLE amadeus_offer_requests
+  ADD INDEX idx_aor_origin (origin_iata),
+  ADD INDEX idx_aor_destination (dest_iata);
+
+ALTER TABLE amadeus_offer_requests
+  ADD CONSTRAINT fk_aor_origin_airport
+  FOREIGN KEY (origin_iata)
+  REFERENCES airports(iata_code)
+  ON UPDATE CASCADE
+  ON DELETE RESTRICT;
+
+ALTER TABLE amadeus_offer_requests
+  ADD CONSTRAINT fk_aor_destination_airport
+  FOREIGN KEY (dest_iata)
+  REFERENCES airports(iata_code)
+  ON UPDATE CASCADE
+  ON DELETE RESTRICT;

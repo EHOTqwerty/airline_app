@@ -1,3 +1,18 @@
+def ensure_airport_placeholder(conn, iata: str) -> None:
+    """
+    Jeśli lotnisko nie istnieje w airports, dodaje placeholder.
+    Dzięki temu FK w amadeus_offer_requests nigdy nie wywali ETL.
+    """
+    iata = (iata or "").strip().upper()
+    if len(iata) != 3:
+        return  # lub rzucić wyjątek invalid_input
+
+    conn.execute(text("""
+        INSERT INTO airports (iata_code, name, country_code, latitude, longitude, is_active, source)
+        VALUES (:iata, 'Unknown airport - placeholder', NULL, NULL, NULL, 0, 'amadeus_placeholder')
+        ON DUPLICATE KEY UPDATE
+          iata_code = VALUES(iata_code)
+    """), {"iata": iata})
 from datetime import datetime, date
 from sqlalchemy import text
 from app.db.connection import get_engine
@@ -31,6 +46,9 @@ def run(origin: str, dest: str, depart_date: str, adults: int = 1, fallback_n: i
     engine = get_engine()
 
     with engine.begin() as conn:
+        ensure_airport_placeholder(conn, origin)
+        ensure_airport_placeholder(conn, dest)
+
         conn.execute(text("""
             INSERT INTO amadeus_offer_requests (origin_iata, dest_iata, depart_date, adults, status, offers_cnt)
             VALUES (:o, :d, :dt, :a, 'fallback', 0)

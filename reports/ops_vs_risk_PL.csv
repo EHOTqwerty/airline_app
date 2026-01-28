@@ -1,5 +1,6 @@
 risk_level,status,flights_cnt
-LOW,scheduled,29
-LOW,delayed,7
-MEDIUM,scheduled,11
-MEDIUM,delayed,1
+LOW,scheduled,38
+LOW,delayed,12
+MEDIUM,scheduled,38
+MEDIUM,delayed,4
+HIGH,scheduled,4
