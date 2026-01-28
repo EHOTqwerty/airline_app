@@ -112,5 +112,40 @@ def _save_hourly(conn, iata: str, data: dict, source: str) -> int:
         n += 1
     return n
 
+
+# Main ETL entrypoint for country-level weather ETL
+from app.config.top_airports import TOP_AIRPORTS
+from app.config.eu_countries import EU_COUNTRIES
+
+def run(country_code: str, start_date: str, end_date: str) -> str:
+    """
+    ETL weather data for all top airports in a given country and date range.
+    """
+    if country_code not in TOP_AIRPORTS:
+        return f"Unknown country code: {country_code}"
+    airports = TOP_AIRPORTS[country_code]
+    # For demo, use fixed coordinates for each airport (should be improved)
+    # In real use, fetch lat/lon from DB or config
+    from app.db.connection import get_engine
+    engine = get_engine()
+    results = []
+    with engine.connect() as conn:
+        for iata in airports:
+            # Try to get lat/lon from DB
+            row = conn.execute(
+                text("SELECT latitude, longitude FROM airports WHERE iata_code=:iata"),
+                {"iata": iata}
+            ).fetchone()
+            if not row:
+                results.append(f"{iata}: coordinates not found in DB")
+                continue
+            lat, lon = row
+            try:
+                msg = etl_weather_for_airport(iata, lat, lon, datetime.strptime(start_date, "%Y-%m-%d").date(), datetime.strptime(end_date, "%Y-%m-%d").date())
+                results.append(f"{iata}: {msg}")
+            except Exception as e:
+                results.append(f"{iata}: ERROR {e}")
+    return "\n".join(results)
+
 if __name__ == "__main__":
     print(run("PL", "2026-02-01", "2026-02-07"))
